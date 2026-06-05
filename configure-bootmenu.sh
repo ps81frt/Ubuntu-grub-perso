@@ -1,71 +1,37 @@
 #!/bin/bash
-
 set -euo pipefail
 
-GRUB_CUSTOM="/etc/grub.d/40_custom"
-GRUB_CUSTOM_BAK="/etc/grub.d/40_custom.bak"
 MEMTEST_SCRIPT="/etc/grub.d/20_memtest86+"
+UEFI_SCRIPT="/etc/grub.d/30_uefi-firmware"
 
 log() {
     echo "[BOOTCFG] $1"
 }
 
-if [[ $EUID -ne 0 ]]; then
-    echo "Root requis"
-    exit 1
-fi
-
-log "Backup 40_custom"
-[ -f "$GRUB_CUSTOM" ] && cp "$GRUB_CUSTOM" "$GRUB_CUSTOM_BAK"
+[[ $EUID -ne 0 ]] && exit 1
 
 # --------------------------------------------------
-# MEMTEST HANDLING (portable)
+# MEMTEST (MOVE ONLY → ORDER CONTROL)
 # --------------------------------------------------
+log "Move Memtest to bottom"
 
-log "Configuration Memtest"
-
-if [ -f "$MEMTEST_SCRIPT" ]; then
-    chmod -x "$MEMTEST_SCRIPT" 2>/dev/null || true
-fi
-
-# détecte si déjà ajouté
-if ! grep -q "Memory Test (Memtest86+)" "$GRUB_CUSTOM" 2>/dev/null; then
-cat <<'EOF' >> "$GRUB_CUSTOM"
-
-menuentry "Memory Test (Memtest86+)" --class memtest {
-    linux16 /boot/mt86+x64
-}
-EOF
+if [[ -f "$MEMTEST_SCRIPT" ]]; then
+    mv "$MEMTEST_SCRIPT" /etc/grub.d/80_memtest86+
 fi
 
 # --------------------------------------------------
-# EFI ENTRY (safe multi-boot)
+# UEFI (MOVE ONLY → ORDER CONTROL)
 # --------------------------------------------------
+log "Move UEFI to bottom"
 
-if ! grep -q "UEFI Firmware Settings" "$GRUB_CUSTOM" 2>/dev/null; then
-cat <<'EOF' >> "$GRUB_CUSTOM"
-
-if [ "${grub_platform}" = "efi" ]; then
-menuentry "UEFI Firmware Settings" --class efi {
-    fwsetup
-}
-fi
-
-EOF
+if [[ -f "$UEFI_SCRIPT" ]]; then
+    mv "$UEFI_SCRIPT" /etc/grub.d/81_uefi-firmware
 fi
 
 # --------------------------------------------------
-# CLEAN DUPLICATES (safe)
+# UPDATE GRUB
 # --------------------------------------------------
-
-log "Nettoyage doublons memtest"
-sed -i '/Memory Test (Memtest86+)/,/^}/d' "$GRUB_CUSTOM" 2>/dev/null || true
-
-# --------------------------------------------------
-# UPDATE GRUB (portable)
-# --------------------------------------------------
-
-log "Regénération GRUB"
+log "Regeneration GRUB"
 
 if command -v update-grub >/dev/null 2>&1; then
     update-grub
@@ -73,4 +39,4 @@ else
     grub-mkconfig -o /boot/grub/grub.cfg
 fi
 
-log "OK bootmenu deployable terminé"
+log "DONE"
