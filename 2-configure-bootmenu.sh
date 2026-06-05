@@ -45,46 +45,69 @@ if grep -q "$MARKER_START" "$CUSTOM_SCRIPT" 2>/dev/null; then
     log "Ancien bloc custom supprimé (remplacement)"
 fi
 
-MEMTEST_EFI=""
+MT_X64=""
+MT_IA32=""
+MT_GENERIC=""
+
 for path in \
+    /boot/mt86+x64 \
+    /boot/mt86+x64.efi \
     /boot/memtest86+x64.efi \
-    /boot/memtest86+.efi \
+    /boot/memtest86+x64 \
     /boot/efi/EFI/memtest86+/memtest86+x64.efi; do
-    if [[ -f "$path" ]]; then
-        MEMTEST_EFI="$path"
-        break
-    fi
+    [[ -f "$path" ]] && { MT_X64="$path"; break; }
 done
 
-MEMTEST_BIN=""
-for path in /boot/memtest86+.bin /boot/memtest86+; do
-    if [[ -f "$path" ]]; then
-        MEMTEST_BIN="$path"
-        break
-    fi
+for path in \
+    /boot/mt86+ia32 \
+    /boot/mt86+ia32.efi \
+    /boot/memtest86+ia32.efi \
+    /boot/memtest86+ia32; do
+    [[ -f "$path" ]] && { MT_IA32="$path"; break; }
 done
+
+if [[ -z "$MT_X64" && -z "$MT_IA32" ]]; then
+    for path in \
+        /boot/memtest86+.bin \
+        /boot/memtest86+ \
+        /boot/memtest86 \
+        /boot/memtest; do
+        [[ -f "$path" ]] && { MT_GENERIC="$path"; break; }
+    done
+fi
 
 BLOCK="$MARKER_START\n"
 
-if [[ -n "$MEMTEST_EFI" ]]; then
-    BLOCK+="menuentry 'Memory Test (Memtest86+)' --class memtest {\n"
-    BLOCK+="    insmod part_gpt\n"
-    BLOCK+="    insmod fat\n"
-    BLOCK+="    insmod chain\n"
-    BLOCK+="    search --no-floppy --set=root --file '$MEMTEST_EFI'\n"
-    BLOCK+="    chainloader '$MEMTEST_EFI'\n"
+if [[ -n "$MT_X64" || -n "$MT_IA32" ]]; then
+    BLOCK+="submenu 'Memory Test (Memtest86+)' --class memtest {\n"
+    if [[ -n "$MT_X64" ]]; then
+        BLOCK+="    menuentry 'Memtest x64' {\n"
+        BLOCK+="        linux16 $MT_X64\n"
+        BLOCK+="    }\n"
+        BLOCK+="    menuentry 'Memtest x64 serial' {\n"
+        BLOCK+="        linux16 $MT_X64\n"
+        BLOCK+="        set gfxpayload=text\n"
+        BLOCK+="    }\n"
+    fi
+    if [[ -n "$MT_IA32" ]]; then
+        BLOCK+="    menuentry 'Memtest ia32' {\n"
+        BLOCK+="        linux16 $MT_IA32\n"
+        BLOCK+="    }\n"
+        BLOCK+="    menuentry 'Memtest ia32 serial' {\n"
+        BLOCK+="        linux16 $MT_IA32\n"
+        BLOCK+="        set gfxpayload=text\n"
+        BLOCK+="    }\n"
+    fi
     BLOCK+="}\n"
-    log "Entrée Memtest86+ EFI ajoutée ($MEMTEST_EFI)"
-elif [[ -n "$MEMTEST_BIN" ]]; then
+    log "Submenu Memtest86+ UEFI ajouté (x64=${MT_X64:-none} ia32=${MT_IA32:-none})"
+elif [[ -n "$MT_GENERIC" ]]; then
     BLOCK+="menuentry 'Memory Test (Memtest86+)' --class memtest {\n"
-    BLOCK+="    insmod part_msdos\n"
-    BLOCK+="    insmod ext2\n"
-    BLOCK+="    linux16 '$MEMTEST_BIN'\n"
+    BLOCK+="    linux16 $MT_GENERIC\n"
     BLOCK+="}\n"
-    log "Entrée Memtest86+ legacy ajoutée ($MEMTEST_BIN)"
+    log "Entrée Memtest86+ legacy ajoutée ($MT_GENERIC)"
 else
     BLOCK+="# Memtest86+ non détecté sur ce système\n"
-    log "AVERTISSEMENT : binaire Memtest86+ introuvable, entrée commentée"
+    log "AVERTISSEMENT : aucun binaire Memtest86+ trouvé, entrée commentée"
 fi
 
 BLOCK+="menuentry 'Paramètres du firmware UEFI' --class efi {\n"
